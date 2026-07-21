@@ -1,9 +1,40 @@
 services:
+  gateway:
+    build:
+      context: ./gateway
+    image: capt-observatory-gateway:local
+    restart: unless-stopped
+    expose:
+      - "8787"
+    environment:
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: 8787
+      ALLOW_EXECUTION: "false"
+      MAX_BODY_BYTES: 16384
+      MAX_EVENT_LIMIT: 200
+      PREVIEW_TTL_MS: 60000
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
   dashboard:
     build:
       context: .
     image: capt-dashboard:local
     restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_healthy
     ports:
       - "127.0.0.1:8080:8080"
     read_only: true
