@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { dashboardConfig } from '../config';
-import { events as fixtureEvents, pipeline as fixturePipeline } from '../data';
+import { agents as fixtureAgents, events as fixtureEvents, pipeline as fixturePipeline } from '../data';
 import type {
+  AgentTelemetry,
   CognitiveEvent,
   CognitiveMetric,
   DashboardSnapshot,
@@ -22,6 +23,18 @@ type GatewayPipelineStage = {
   provenance?: { source?: string; schemaVersion?: string; simulated?: boolean };
 };
 
+type GatewayAgent = {
+  id: string;
+  name?: string;
+  role?: string;
+  state?: AgentTelemetry['state'];
+  load?: number;
+  trust?: number;
+  activeTask?: string | null;
+  lastHeartbeatAt?: string;
+  provenance?: { source?: string; schemaVersion?: string; simulated?: boolean };
+};
+
 type GatewaySnapshot = {
   snapshotId: string;
   generatedAt: string;
@@ -29,6 +42,7 @@ type GatewaySnapshot = {
   provenance?: { source?: string; simulated?: boolean };
   metrics?: Record<string, number>;
   pipeline?: GatewayPipelineStage[];
+  agents?: GatewayAgent[];
 };
 
 type GatewayEvent = Omit<CognitiveEvent, 'provenance'> & {
@@ -72,7 +86,7 @@ function normalizeMetrics(values: Record<string, number>, observedAt: string, so
 
 function normalizePipeline(stages: GatewayPipelineStage[] | undefined, observedAt: string, source: string): PipelineStageTelemetry[] {
   if (!stages?.length) return [];
-  return stages.map((stage) => ({
+  return stages.slice(0, 64).map((stage) => ({
     id: stage.id,
     label: stage.label ?? stage.id.replace(/(^|-)(\w)/g, (_, prefix: string, letter: string) => `${prefix ? ' ' : ''}${letter.toUpperCase()}`),
     health: stage.health ?? 'offline',
@@ -82,6 +96,21 @@ function normalizePipeline(stages: GatewayPipelineStage[] | undefined, observedA
     queueDepth: Number.isFinite(stage.queueDepth) ? Math.max(0, Math.round(stage.queueDepth ?? 0)) : 0,
     detail: stage.detail ?? 'No runtime detail was supplied for this stage.',
     provenance: provenance(stage.provenance?.source ?? source, observedAt, (stage.confidence ?? 0) / 100),
+  }));
+}
+
+function normalizeAgents(agents: GatewayAgent[] | undefined, observedAt: string, source: string): AgentTelemetry[] {
+  if (!agents?.length) return [];
+  return agents.slice(0, 256).map((agent) => ({
+    id: agent.id,
+    name: agent.name ?? agent.id,
+    role: agent.role ?? 'Unspecified role',
+    state: agent.state ?? 'offline',
+    load: Number.isFinite(agent.load) ? Math.max(0, Math.min(100, agent.load ?? 0)) : 0,
+    trust: Number.isFinite(agent.trust) ? Math.max(0, Math.min(100, agent.trust ?? 0)) : 0,
+    activeTask: typeof agent.activeTask === 'string' ? agent.activeTask : null,
+    lastHeartbeatAt: agent.lastHeartbeatAt ?? observedAt,
+    provenance: provenance(agent.provenance?.source ?? source, agent.lastHeartbeatAt ?? observedAt, (agent.trust ?? 0) / 100),
   }));
 }
 
@@ -123,6 +152,17 @@ function simulatedSnapshot(tick = 0): DashboardSnapshot {
     detail: stage.detail,
     provenance: provenance('simulated-adapter', generatedAt, stage.confidence / 100),
   })) satisfies PipelineStageTelemetry[];
+  const agents = fixtureAgents.map((agent, index) => ({
+    id: agent.name.toLowerCase(),
+    name: agent.name,
+    role: agent.role,
+    state: agent.state,
+    load: Math.max(0, Math.min(100, agent.load + Math.round(Math.sin((tick + index) / 3) * 2))),
+    trust: agent.trust,
+    activeTask: agent.state === 'blocked' ? 'Waiting on external dependency' : agent.state === 'watching' ? 'Policy observation' : 'Current mission execution',
+    lastHeartbeatAt: generatedAt,
+    provenance: provenance('simulated-adapter', generatedAt, agent.trust / 100),
+  })) satisfies AgentTelemetry[];
 
   return {
     snapshotId: `simulated-${tick}`,
@@ -138,6 +178,7 @@ function simulatedSnapshot(tick = 0): DashboardSnapshot {
     },
     metrics: normalizeMetrics(values, generatedAt, 'simulated-adapter'),
     pipeline,
+    agents,
     recentEvents,
   };
 }
@@ -174,6 +215,7 @@ async function gatewaySnapshot(signal?: AbortSignal): Promise<DashboardSnapshot>
     },
     metrics,
     pipeline: normalizePipeline(snapshot.pipeline, observedAt, source),
+    agents: normalizeAgents(snapshot.agents, observedAt, source),
     recentEvents: (page.events ?? []).map(normalizeEvent),
   };
 }
