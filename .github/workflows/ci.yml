@@ -16,7 +16,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm install
+      - run: npm install --no-audit --no-fund
       - run: npm run check
       - run: npm run build
+      - run: npm --prefix gateway test
+      - run: docker compose config
+      - run: docker build -t capt-dashboard-ci .
+      - run: docker build -t capt-observatory-gateway-ci ./gateway
