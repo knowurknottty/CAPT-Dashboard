@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
+import { readMemoryObservability } from './memory-observability.mjs';
 
 const HOST = process.env.GATEWAY_HOST ?? '0.0.0.0';
 const PORT = Number(process.env.GATEWAY_PORT ?? 8787);
@@ -47,12 +48,7 @@ const audit = [];
 
 function json(res, status, payload, headers = {}) {
   const body = JSON.stringify(payload);
-  res.writeHead(status, {
-    'content-type': 'application/json; charset=utf-8',
-    'cache-control': 'no-store',
-    'x-content-type-options': 'nosniff',
-    ...headers,
-  });
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...headers });
   res.end(body);
 }
 
@@ -69,66 +65,48 @@ async function readJson(req) {
     chunks.push(chunk);
   }
   if (size === 0) return {};
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch {
-    throw Object.assign(new Error('invalid JSON'), { status: 400 });
-  }
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  catch { throw Object.assign(new Error('invalid JSON'), { status: 400 }); }
 }
 
 function snapshot() {
   const now = new Date().toISOString();
   const source = { source: 'gateway-fixture', simulated: true, schemaVersion: '1.0.0' };
   return {
-    schemaVersion: '1.0.0',
+    schemaVersion: '1.1.0',
     snapshotId: randomUUID(),
     generatedAt: now,
     freshness: { state: 'live', observedAt: now, expectedCadenceMs: 15_000 },
     provenance: { ...source, instanceId },
-    metrics: {
-      cognitiveHealth: 87,
-      missionProgress: 64,
-      systemTrust: 92,
-      cognitiveEntropy: 23,
-      decisionRegret: 11,
-      learningVelocity: 78,
-    },
+    metrics: { cognitiveHealth: 87, missionProgress: 64, systemTrust: 92, cognitiveEntropy: 23, decisionRegret: 11, learningVelocity: 78 },
     pipeline: pipeline.map((stage) => ({ ...stage, provenance: source })),
     agents: agents.map((agent) => ({ ...agent, lastHeartbeatAt: now, provenance: source })),
+    memory: readMemoryObservability(),
   };
 }
 
-function stableHash(value) {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
-}
-
+function stableHash(value) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function safeEqual(a, b) {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
+  const left = Buffer.from(a); const right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);
 }
-
 function cleanupPreviews() {
   const now = Date.now();
   for (const [token, preview] of previews) if (preview.expiresAt <= now) previews.delete(token);
 }
-
 function appendAudit(entry) {
   const previousHash = audit.at(-1)?.hash ?? 'GENESIS';
   const record = { id: randomUUID(), recordedAt: new Date().toISOString(), previousHash, ...entry };
-  record.hash = stableHash(record);
-  audit.push(record);
-  if (audit.length > 1_000) audit.shift();
-  return record;
+  record.hash = stableHash(record); audit.push(record); if (audit.length > 1_000) audit.shift(); return record;
 }
 
 function route(req, res) {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   const pathname = url.pathname;
-
   if (req.method === 'GET' && pathname === '/healthz') return json(res, 200, { status: 'ok', instanceId });
   if (req.method === 'GET' && pathname === '/readyz') return json(res, 200, { status: 'ready', uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000) });
   if (req.method === 'GET' && pathname === '/api/v1/snapshot') return json(res, 200, snapshot());
+  if (req.method === 'GET' && pathname === '/api/v1/memory') return json(res, 200, readMemoryObservability());
 
   if (req.method === 'GET' && pathname === '/api/v1/events') {
     const after = Math.max(0, Number(url.searchParams.get('after') ?? 0));
@@ -136,72 +114,43 @@ function route(req, res) {
     const page = events.filter((event) => event.sequence > after).slice(0, limit);
     return json(res, 200, { events: page, nextSequence: page.at(-1)?.sequence ?? after, truncated: page.length === limit });
   }
-
   if (req.method === 'GET' && pathname === '/api/v1/events/stream') {
     const after = Math.max(0, Number(url.searchParams.get('after') ?? 0));
-    res.writeHead(200, {
-      'content-type': 'text/event-stream; charset=utf-8',
-      'cache-control': 'no-cache, no-transform',
-      connection: 'keep-alive',
-      'x-accel-buffering': 'no',
-    });
-    for (const event of events.filter((item) => item.sequence > after).slice(0, MAX_EVENT_LIMIT)) {
-      res.write(`id: ${event.sequence}\nevent: observatory\ndata: ${JSON.stringify(event)}\n\n`);
-    }
+    res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+    for (const event of events.filter((item) => item.sequence > after).slice(0, MAX_EVENT_LIMIT)) res.write(`id: ${event.sequence}\nevent: observatory\ndata: ${JSON.stringify(event)}\n\n`);
     const heartbeat = setInterval(() => res.write(`event: heartbeat\ndata: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`), 15_000);
-    req.on('close', () => clearInterval(heartbeat));
-    return;
+    req.on('close', () => clearInterval(heartbeat)); return;
   }
-
   if (req.method === 'GET' && pathname.startsWith('/api/v1/traces/')) {
     const traceId = decodeURIComponent(pathname.slice('/api/v1/traces/'.length));
     const related = events.filter((event) => event.traceId === traceId);
     if (related.length === 0) return problem(res, 404, 'trace_not_found', 'No bounded trace data exists for that identifier.');
     return json(res, 200, { traceId, spans: related.map((event) => ({ eventId: event.id, occurredAt: event.occurredAt, name: event.title, attributes: event.provenance })) });
   }
-
   if (req.method === 'GET' && pathname === '/api/v1/audit') {
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? 25)));
     return json(res, 200, { records: audit.slice(-limit), chainHead: audit.at(-1)?.hash ?? null });
   }
-
   if (req.method === 'POST' && pathname === '/api/v1/interventions/preview') {
     return readJson(req).then((body) => {
       if (typeof body.action !== 'string' || body.action.length < 3 || body.action.length > 120) return problem(res, 422, 'invalid_action', 'Action must be a string between 3 and 120 characters.');
-      cleanupPreviews();
-      const token = randomBytes(32).toString('base64url');
-      const expiresAt = Date.now() + PREVIEW_TTL_MS;
-      const stateHash = stableHash(snapshot().metrics);
+      cleanupPreviews(); const token = randomBytes(32).toString('base64url'); const expiresAt = Date.now() + PREVIEW_TTL_MS; const stateHash = stableHash(snapshot().metrics);
       previews.set(token, { action: body.action, target: body.target ?? null, stateHash, expiresAt });
       appendAudit({ kind: 'intervention_previewed', action: body.action, target: body.target ?? null, stateHash });
-      return json(res, 201, {
-        previewToken: token,
-        expiresAt: new Date(expiresAt).toISOString(),
-        action: body.action,
-        target: body.target ?? null,
-        expectedImpact: 'No runtime effect in fixture mode.',
-        risk: 'low',
-        requiresConfirmation: true,
-        executionEnabled: ALLOW_EXECUTION,
-      });
+      return json(res, 201, { previewToken: token, expiresAt: new Date(expiresAt).toISOString(), action: body.action, target: body.target ?? null, expectedImpact: 'No runtime effect in fixture mode.', risk: 'low', requiresConfirmation: true, executionEnabled: ALLOW_EXECUTION });
     }).catch((error) => problem(res, error.status ?? 500, 'invalid_request', error.message));
   }
-
   if (req.method === 'POST' && pathname === '/api/v1/interventions/confirm') {
     return readJson(req).then((body) => {
-      cleanupPreviews();
-      if (typeof body.previewToken !== 'string') return problem(res, 422, 'missing_preview_token', 'A preview token is required.');
+      cleanupPreviews(); if (typeof body.previewToken !== 'string') return problem(res, 422, 'missing_preview_token', 'A preview token is required.');
       const match = [...previews.keys()].find((token) => safeEqual(token, body.previewToken));
       if (!match) return problem(res, 409, 'preview_expired_or_invalid', 'Preview token is invalid, expired, or already used.');
-      const preview = previews.get(match);
-      previews.delete(match);
-      const currentStateHash = stableHash(snapshot().metrics);
+      const preview = previews.get(match); previews.delete(match); const currentStateHash = stableHash(snapshot().metrics);
       if (preview.stateHash !== currentStateHash) return problem(res, 409, 'state_changed', 'Observed state changed after preview; request a new preview.');
       const receipt = appendAudit({ kind: ALLOW_EXECUTION ? 'intervention_executed' : 'intervention_simulated', action: preview.action, target: preview.target, stateHash: currentStateHash });
       return json(res, 200, { status: ALLOW_EXECUTION ? 'executed' : 'simulated', receipt });
     }).catch((error) => problem(res, error.status ?? 500, 'invalid_request', error.message));
   }
-
   return problem(res, 404, 'not_found', 'No route matches this request.');
 }
 
@@ -213,7 +162,5 @@ export function createGatewayServer() {
 }
 
 if (process.env.NODE_ENV !== 'test') {
-  createGatewayServer().listen(PORT, HOST, () => {
-    console.log(JSON.stringify({ level: 'info', message: 'CAPT Observatory Gateway listening', host: HOST, port: PORT, instanceId, executionEnabled: ALLOW_EXECUTION }));
-  });
+  createGatewayServer().listen(PORT, HOST, () => console.log(JSON.stringify({ level: 'info', message: 'CAPT Observatory Gateway listening', host: HOST, port: PORT, instanceId, executionEnabled: ALLOW_EXECUTION })));
 }
