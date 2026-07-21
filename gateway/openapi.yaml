@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CAPT Observatory Gateway
-  version: 0.1.0
+  version: 0.2.0
   description: Bounded, evidence-oriented API between CAPT runtime sources and the self-hosted dashboard.
 servers:
   - url: /api/v1
@@ -12,6 +12,38 @@ paths:
       responses:
         '200':
           description: Current bounded snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schemaVersion, snapshotId, generatedAt, freshness, provenance, metrics, pipeline]
+                properties:
+                  schemaVersion: { type: string }
+                  snapshotId: { type: string }
+                  generatedAt: { type: string, format: date-time }
+                  freshness:
+                    type: object
+                    required: [state, observedAt]
+                    properties:
+                      state: { type: string, enum: [live, delayed, stale, partial, offline, error] }
+                      observedAt: { type: string, format: date-time }
+                      expectedCadenceMs: { type: integer, minimum: 1 }
+                  provenance:
+                    type: object
+                    required: [source, simulated, schemaVersion]
+                    properties:
+                      source: { type: string }
+                      simulated: { type: boolean }
+                      schemaVersion: { type: string }
+                      instanceId: { type: string }
+                  metrics:
+                    type: object
+                    additionalProperties: { type: number }
+                  pipeline:
+                    type: array
+                    maxItems: 64
+                    items:
+                      $ref: '#/components/schemas/PipelineStageTelemetry'
   /events:
     get:
       summary: Page through normalized append-only observatory events
@@ -79,3 +111,25 @@ paths:
       summary: Return the bounded tail of hash-chained gateway audit records
       responses:
         '200': { description: Audit record page }
+components:
+  schemas:
+    PipelineStageTelemetry:
+      type: object
+      additionalProperties: false
+      required: [id, label, health, latencyMs, throughputPerMinute, confidence, queueDepth, detail, provenance]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 80 }
+        label: { type: string, minLength: 1, maxLength: 120 }
+        health: { type: string, enum: [healthy, warning, critical, offline] }
+        latencyMs: { type: number, minimum: 0 }
+        throughputPerMinute: { type: [number, 'null'], minimum: 0 }
+        confidence: { type: number, minimum: 0, maximum: 100 }
+        queueDepth: { type: integer, minimum: 0 }
+        detail: { type: string, maxLength: 500 }
+        provenance:
+          type: object
+          required: [source, simulated, schemaVersion]
+          properties:
+            source: { type: string }
+            simulated: { type: boolean }
+            schemaVersion: { type: string }
