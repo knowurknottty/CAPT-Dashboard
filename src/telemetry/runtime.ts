@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { dashboardConfig } from '../config';
 import { agents as fixtureAgents, events as fixtureEvents, pipeline as fixturePipeline } from '../data';
 import type {
+  AgentOperatingState,
   AgentTelemetry,
   CognitiveEvent,
   CognitiveMetric,
@@ -72,6 +73,12 @@ function provenance(source: string, observedAt: string, confidence = 1): Provena
   return { source, observedAt, schemaVersion: '1.0.0', confidence };
 }
 
+function normalizeAgentState(value: string | undefined): AgentOperatingState {
+  return value === 'active' || value === 'watching' || value === 'blocked' || value === 'idle' || value === 'offline'
+    ? value
+    : 'offline';
+}
+
 function normalizeMetrics(values: Record<string, number>, observedAt: string, source: string): CognitiveMetric[] {
   return Object.entries(labels).map(([id, label]) => ({
     id,
@@ -105,7 +112,7 @@ function normalizeAgents(agents: GatewayAgent[] | undefined, observedAt: string,
     id: agent.id,
     name: agent.name ?? agent.id,
     role: agent.role ?? 'Unspecified role',
-    state: agent.state ?? 'offline',
+    state: normalizeAgentState(agent.state),
     load: Number.isFinite(agent.load) ? Math.max(0, Math.min(100, agent.load ?? 0)) : 0,
     trust: Number.isFinite(agent.trust) ? Math.max(0, Math.min(100, agent.trust ?? 0)) : 0,
     activeTask: typeof agent.activeTask === 'string' ? agent.activeTask : null,
@@ -156,7 +163,7 @@ function simulatedSnapshot(tick = 0): DashboardSnapshot {
     id: agent.name.toLowerCase(),
     name: agent.name,
     role: agent.role,
-    state: agent.state,
+    state: normalizeAgentState(agent.state),
     load: Math.max(0, Math.min(100, agent.load + Math.round(Math.sin((tick + index) / 3) * 2))),
     trust: agent.trust,
     activeTask: agent.state === 'blocked' ? 'Waiting on external dependency' : agent.state === 'watching' ? 'Policy observation' : 'Current mission execution',
