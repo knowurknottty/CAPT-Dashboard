@@ -69,7 +69,7 @@ function simulatedSnapshot(tick = 0): DashboardSnapshot {
   const values = Object.fromEntries(Object.entries(fallbackMetrics).map(([key, value], index) => [key, Math.max(0, Math.min(100, value + Math.round(Math.sin((tick + index) / 2) * 2)))]));
   const recentEvents = fixtureEvents.map((event) => ({
     id: event.id,
-    type: event.type,
+    type: event.type === 'tool' ? 'execution' : event.type,
     title: event.title,
     detail: event.detail,
     occurredAt: new Date(Date.now() - (59 - event.minute) * 60_000).toISOString(),
