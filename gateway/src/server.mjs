@@ -33,6 +33,15 @@ const pipeline = [
   { id: 'learning', label: 'Learning', health: 'healthy', latencyMs: 73, throughputPerMinute: 9, confidence: 86, queueDepth: 2, detail: 'Validated procedure promoted into a governed knowledge bubble.' },
 ];
 
+const agents = [
+  { id: 'architect', name: 'Architect', role: 'System model', state: 'active', load: 82, trust: 96, activeTask: 'Maintaining observability architecture' },
+  { id: 'scout', name: 'Scout', role: 'Discovery', state: 'active', load: 61, trust: 88, activeTask: 'Enumerating runtime evidence sources' },
+  { id: 'verifier', name: 'Verifier', role: 'Evidence', state: 'active', load: 73, trust: 94, activeTask: 'Checking provenance and contract consistency' },
+  { id: 'governor', name: 'Governor', role: 'Policy', state: 'watching', load: 38, trust: 99, activeTask: 'Observing intervention policy gates' },
+  { id: 'executor', name: 'Executor', role: 'Actions', state: 'blocked', load: 91, trust: 86, activeTask: 'Waiting on external dependency' },
+  { id: 'reflector', name: 'Reflector', role: 'Learning', state: 'active', load: 47, trust: 92, activeTask: 'Consolidating validated procedures' },
+];
+
 const previews = new Map();
 const audit = [];
 
@@ -85,6 +94,7 @@ function snapshot() {
       learningVelocity: 78,
     },
     pipeline: pipeline.map((stage) => ({ ...stage, provenance: source })),
+    agents: agents.map((agent) => ({ ...agent, lastHeartbeatAt: now, provenance: source })),
   };
 }
 
