@@ -13,6 +13,12 @@ services:
       MAX_BODY_BYTES: 16384
       MAX_EVENT_LIMIT: 200
       PREVIEW_TTL_MS: 60000
+      CAPT_MEMORY_DB_PATH: /capt-data/memory.db
+    volumes:
+      - type: bind
+        source: ${CAPT_SOLO_DATA_DIR:-${HOME}/.capt-solo/data}
+        target: /capt-data
+        read_only: true
     read_only: true
     tmpfs:
       - /tmp

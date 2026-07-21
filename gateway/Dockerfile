@@ -1,5 +1,7 @@
 FROM node:22-alpine
 
+RUN apk add --no-cache sqlite
+
 WORKDIR /app
 COPY package.json ./
 COPY src ./src
@@ -7,7 +9,8 @@ COPY src ./src
 ENV NODE_ENV=production \
     GATEWAY_HOST=0.0.0.0 \
     GATEWAY_PORT=8787 \
-    ALLOW_EXECUTION=false
+    ALLOW_EXECUTION=false \
+    CAPT_MEMORY_DB_PATH=/capt-data/memory.db
 
 USER node
 EXPOSE 8787
