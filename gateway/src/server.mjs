@@ -22,6 +22,17 @@ const events = Array.from({ length: 36 }, (_, index) => ({
   provenance: { source: 'gateway-fixture', simulated: true, schemaVersion: '1.0.0' },
 }));
 
+const pipeline = [
+  { id: 'input', label: 'Input', health: 'healthy', latencyMs: 12, throughputPerMinute: 148, confidence: 99, queueDepth: 2, detail: 'Multimodal ingress normalized and provenance stamped.' },
+  { id: 'attention', label: 'Attention', health: 'warning', latencyMs: 42, throughputPerMinute: 93, confidence: 76, queueDepth: 18, detail: 'Three competing goals are fragmenting the active context window.' },
+  { id: 'recall', label: 'Memory Recall', health: 'healthy', latencyMs: 31, throughputPerMinute: 71, confidence: 91, queueDepth: 4, detail: 'Episodic and semantic retrieval agree on the current mission state.' },
+  { id: 'reasoning', label: 'Reasoning', health: 'healthy', latencyMs: 87, throughputPerMinute: 29, confidence: 84, queueDepth: 7, detail: 'Primary hypothesis is stable; one contradiction remains unresolved.' },
+  { id: 'planning', label: 'Planning', health: 'healthy', latencyMs: 54, throughputPerMinute: 24, confidence: 88, queueDepth: 3, detail: 'Plan graph has six executable steps and one approval gate.' },
+  { id: 'execution', label: 'Execution', health: 'warning', latencyMs: 123, throughputPerMinute: 18, confidence: 79, queueDepth: 11, detail: 'Two tool calls are waiting on external dependencies.' },
+  { id: 'reflection', label: 'Reflection', health: 'healthy', latencyMs: 61, throughputPerMinute: 14, confidence: 94, queueDepth: 1, detail: 'Post-action analysis reduced projected decision regret.' },
+  { id: 'learning', label: 'Learning', health: 'healthy', latencyMs: 73, throughputPerMinute: 9, confidence: 86, queueDepth: 2, detail: 'Validated procedure promoted into a governed knowledge bubble.' },
+];
+
 const previews = new Map();
 const audit = [];
 
@@ -58,12 +69,13 @@ async function readJson(req) {
 
 function snapshot() {
   const now = new Date().toISOString();
+  const source = { source: 'gateway-fixture', simulated: true, schemaVersion: '1.0.0' };
   return {
     schemaVersion: '1.0.0',
     snapshotId: randomUUID(),
     generatedAt: now,
     freshness: { state: 'live', observedAt: now, expectedCadenceMs: 15_000 },
-    provenance: { source: 'gateway-fixture', simulated: true, instanceId },
+    provenance: { ...source, instanceId },
     metrics: {
       cognitiveHealth: 87,
       missionProgress: 64,
@@ -72,12 +84,7 @@ function snapshot() {
       decisionRegret: 11,
       learningVelocity: 78,
     },
-    pipeline: [
-      { id: 'memory', health: 'healthy', latencyMs: 18, confidence: 94, queueDepth: 2 },
-      { id: 'reasoning', health: 'warning', latencyMs: 84, confidence: 81, queueDepth: 7 },
-      { id: 'planning', health: 'healthy', latencyMs: 41, confidence: 88, queueDepth: 3 },
-      { id: 'governance', health: 'healthy', latencyMs: 12, confidence: 97, queueDepth: 0 },
-    ],
+    pipeline: pipeline.map((stage) => ({ ...stage, provenance: source })),
   };
 }
 
