@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -9,6 +9,7 @@ import {
   Database,
   GitBranch,
   Network,
+  RefreshCw,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -16,16 +17,8 @@ import {
   TimerReset,
   Waypoints,
 } from 'lucide-react';
-import { agents, events, hypotheses, memoryClusters, pipeline, type Health } from './data';
-
-const metricSeed = [
-  { label: 'Cognitive health', value: 87, suffix: '%', delta: '+3.1' },
-  { label: 'Mission progress', value: 64, suffix: '%', delta: '+8.4' },
-  { label: 'System trust', value: 92, suffix: '%', delta: '+0.8' },
-  { label: 'Cognitive entropy', value: 23, suffix: '%', delta: '-4.2' },
-  { label: 'Decision regret', value: 11, suffix: '%', delta: '-2.7' },
-  { label: 'Learning velocity', value: 78, suffix: '%', delta: '+6.0' },
-];
+import { agents, hypotheses, memoryClusters, pipeline, type Health } from './data';
+import { useRuntimeTelemetry } from './telemetry/runtime';
 
 function healthLabel(health: Health) {
   return health === 'healthy' ? 'Nominal' : health === 'warning' ? 'Attention' : health === 'critical' ? 'Critical' : 'Offline';
@@ -41,35 +34,26 @@ function Sparkline({ points }: { points: number[] }) {
 }
 
 function App() {
-  const [live, setLive] = useState(true);
-  const [pausedAt, setPausedAt] = useState<number | null>(null);
+  const telemetry = useRuntimeTelemetry();
   const [selectedStage, setSelectedStage] = useState(pipeline[3]);
-  const [selectedEventId, setSelectedEventId] = useState(events[events.length - 1].id);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [timelineMinute, setTimelineMinute] = useState(59);
   const [intervention, setIntervention] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [tick, setTick] = useState(0);
 
-  useEffect(() => {
-    if (!live) return;
-    const timer = window.setInterval(() => setTick((value) => value + 1), 1800);
-    return () => window.clearInterval(timer);
-  }, [live]);
+  const timelineEvents = useMemo(() => telemetry.snapshot.recentEvents.map((event) => ({
+    ...event,
+    minute: Math.max(0, Math.min(59, 59 - Math.floor((Date.now() - new Date(event.occurredAt).getTime()) / 60_000))),
+  })), [telemetry.snapshot.recentEvents]);
 
-  const metrics = useMemo(
-    () => metricSeed.map((metric, index) => ({ ...metric, value: Math.max(0, Math.min(100, metric.value + Math.round(Math.sin((tick + index) / 2) * 2))) })),
-    [tick],
-  );
-
-  const selectedEvent = events.find((event) => event.id === selectedEventId) ?? events[0];
-  const filteredEvents = events.filter((event) => `${event.title} ${event.detail} ${event.type}`.toLowerCase().includes(query.toLowerCase()));
+  const selectedEvent = timelineEvents.find((event) => event.id === selectedEventId) ?? timelineEvents.at(-1) ?? null;
+  const filteredEvents = timelineEvents.filter((event) => `${event.title} ${event.detail} ${event.type}`.toLowerCase().includes(query.toLowerCase()));
+  const mission = telemetry.snapshot.mission;
+  const isLive = telemetry.freshness === 'live' && !telemetry.paused;
 
   function toggleLive() {
-    setLive((value) => {
-      if (value) setPausedAt(Date.now());
-      else setPausedAt(null);
-      return !value;
-    });
+    if (telemetry.paused) telemetry.resume();
+    else telemetry.pause();
   }
 
   return (
@@ -83,11 +67,14 @@ function App() {
           </div>
         </div>
         <div className="top-actions">
-          <div className={`connection ${live ? 'live' : 'stale'}`}>
-            <span /> {live ? 'Live · 1.8s cadence' : 'Paused · last known good'}
+          <div className={`connection ${isLive ? 'live' : 'stale'}`} title={telemetry.error ?? undefined}>
+            <span /> {telemetry.paused ? 'Paused · last known good' : `${telemetry.freshness} · ${telemetry.adapterName}`}
           </div>
-          <button className="icon-button" onClick={toggleLive} aria-label={live ? 'Pause live updates' : 'Resume live updates'}>
-            {live ? <CirclePause size={18} /> : <CirclePlay size={18} />}
+          <button className="icon-button" onClick={() => void telemetry.refresh()} aria-label="Refresh telemetry">
+            <RefreshCw size={18} />
+          </button>
+          <button className="icon-button" onClick={toggleLive} aria-label={telemetry.paused ? 'Resume live updates' : 'Pause live updates'}>
+            {telemetry.paused ? <CirclePlay size={18} /> : <CirclePause size={18} />}
           </button>
           <button className="primary-button" onClick={() => setIntervention('Snapshot current cognitive state')}>Create snapshot</button>
         </div>
@@ -96,21 +83,21 @@ function App() {
       <section className="mission-strip">
         <div>
           <span className="eyeline">Current mission</span>
-          <h1>Make CAPT cognition observable without turning it into infrastructure noise.</h1>
-          <p>Phase 2 of 6 · Telemetry contract and interaction model validation</p>
+          <h1>{mission.goal}</h1>
+          <p>{mission.phase}</p>
         </div>
-        <div className="mission-progress" aria-label="Mission progress 64 percent">
-          <div className="progress-ring"><span>64%</span></div>
-          <div><strong>1 blocker</strong><span>2 external dependencies waiting</span></div>
+        <div className="mission-progress" aria-label={`Mission progress ${mission.progress} percent`}>
+          <div className="progress-ring"><span>{mission.progress}%</span></div>
+          <div><strong>{mission.blockers} blocker{mission.blockers === 1 ? '' : 's'}</strong><span>{mission.dependenciesWaiting} external dependencies waiting</span></div>
         </div>
       </section>
 
       <section className="metric-rail" aria-label="Executive cognitive metrics">
-        {metrics.map((metric, index) => (
-          <article key={metric.label} className="metric-cell">
+        {telemetry.snapshot.metrics.map((metric, index) => (
+          <article key={metric.id} className="metric-cell" title={`${metric.provenance.source} · ${metric.provenance.observedAt}`}>
             <span>{metric.label}</span>
-            <div><strong>{metric.value}{metric.suffix}</strong><em className={metric.delta.startsWith('-') ? 'good-delta' : ''}>{metric.delta}</em></div>
-            <Sparkline points={[40 + index * 2, 48, 44 + index, 61, 55, 68 + index]} />
+            <div><strong>{metric.value}{metric.unit}</strong><em>{metric.trend ? `${metric.trend > 0 ? '+' : ''}${metric.trend}` : '—'}</em></div>
+            <Sparkline points={[40 + index * 2, 48, 44 + index, 61, 55, Math.min(100, metric.value)]} />
           </article>
         ))}
       </section>
@@ -119,7 +106,7 @@ function App() {
         <section className="panel pipeline-panel">
           <div className="panel-heading">
             <div><span className="eyeline">Cognitive pipeline</span><h2>State flow</h2></div>
-            <span className="muted">8 active stages · 2 need attention</span>
+            <span className="muted">Fixture-backed · gateway pipeline schema pending</span>
           </div>
           <div className="pipeline-flow">
             {pipeline.map((stage, index) => (
@@ -127,7 +114,7 @@ function App() {
                 <button className={`stage-node ${stage.health} ${selectedStage.id === stage.id ? 'selected' : ''}`} onClick={() => setSelectedStage(stage)}>
                   <span className="stage-index">0{index + 1}</span>
                   <strong>{stage.label}</strong>
-                  <span>{stage.latency + (live ? tick % 3 : 0)} ms</span>
+                  <span>{stage.latency} ms</span>
                   <i aria-label={healthLabel(stage.health)} />
                 </button>
                 {index < pipeline.length - 1 && <ChevronRight className="stage-arrow" size={16} />}
@@ -212,10 +199,10 @@ function App() {
           </div>
           <div className="event-stream">
             {filteredEvents.filter((event) => event.minute <= timelineMinute).slice(-5).reverse().map((event) => (
-              <button className={`event-row ${selectedEventId === event.id ? 'selected' : ''}`} key={event.id} onClick={() => setSelectedEventId(event.id)}>
+              <button className={`event-row ${selectedEvent?.id === event.id ? 'selected' : ''}`} key={event.id} onClick={() => setSelectedEventId(event.id)}>
                 <span className={`event-icon ${event.type}`}>{event.type === 'memory' ? <Database size={15} /> : event.type === 'reasoning' ? <BrainCircuit size={15} /> : event.type === 'agent' ? <Waypoints size={15} /> : event.type === 'governance' ? <ShieldCheck size={15} /> : <Activity size={15} />}</span>
                 <div><strong>{event.title}</strong><span>{event.detail}</span></div>
-                <time>{59 - event.minute}m ago</time>
+                <time>{Math.max(0, 59 - event.minute)}m ago</time>
               </button>
             ))}
           </div>
@@ -223,28 +210,28 @@ function App() {
 
         <aside className="panel evidence-panel">
           <div className="panel-heading"><div><span className="eyeline">Evidence</span><h2>Selected event</h2></div><Sparkles size={20} /></div>
-          <div className="evidence-card">
+          {selectedEvent ? <div className="evidence-card">
             <span className={`event-label ${selectedEvent.type}`}>{selectedEvent.type}</span>
             <h3>{selectedEvent.title}</h3>
             <p>{selectedEvent.detail}</p>
             <dl>
               <div><dt>Confidence</dt><dd>{selectedEvent.confidence}%</dd></div>
-              <div><dt>Trace</dt><dd>capt-{selectedEvent.id}-7a9</dd></div>
-              <div><dt>Provenance</dt><dd>simulated adapter</dd></div>
-              <div><dt>Freshness</dt><dd>{live ? 'live' : `stale since ${pausedAt ? new Date(pausedAt).toLocaleTimeString() : 'pause'}`}</dd></div>
+              <div><dt>Trace</dt><dd>{selectedEvent.traceId}</dd></div>
+              <div><dt>Provenance</dt><dd>{selectedEvent.provenance.source}</dd></div>
+              <div><dt>Freshness</dt><dd>{telemetry.freshness}</dd></div>
             </dl>
-          </div>
+          </div> : <div className="evidence-card"><p>No event evidence is available from the active adapter.</p></div>}
           <div className="intervention-stack">
-            <button onClick={() => setIntervention('Replay selected event')}><RotateCcw size={16} /> Replay event</button>
-            <button onClick={() => setIntervention('Inspect distributed trace')}><Waypoints size={16} /> Open trace</button>
+            <button disabled={!selectedEvent} onClick={() => setIntervention('Replay selected event')}><RotateCcw size={16} /> Replay event</button>
+            <button disabled={!selectedEvent} onClick={() => setIntervention('Inspect distributed trace')}><Waypoints size={16} /> Open trace</button>
             <button onClick={() => setIntervention('Create rollback checkpoint')}><TimerReset size={16} /> Checkpoint</button>
           </div>
         </aside>
       </div>
 
       <footer>
-        <span>CAPT Dashboard prototype · telemetry is simulated until runtime adapters are connected.</span>
-        <span>Last update {new Date().toLocaleTimeString()}</span>
+        <span>CAPT Dashboard · active adapter: {telemetry.adapterName}{telemetry.error ? ` · ${telemetry.error}` : ''}</span>
+        <span>Observed {new Date(telemetry.snapshot.generatedAt).toLocaleTimeString()}</span>
       </footer>
 
       {intervention && (
@@ -253,7 +240,7 @@ function App() {
             <AlertTriangle size={24} />
             <span className="eyeline">Intervention preview</span>
             <h2 id="modal-title">{intervention}</h2>
-            <p>This prototype never executes a destructive operation. Production adapters must provide authorization, expected impact, rollback semantics, and an auditable confirmation record.</p>
+            <p>Runtime execution remains disabled by default. The gateway must preview, revalidate, confirm, and append an auditable receipt before any governed action can execute.</p>
             <div className="modal-actions"><button onClick={() => setIntervention(null)}>Cancel</button><button className="primary-button" onClick={() => setIntervention(null)}>Acknowledge preview</button></div>
           </section>
         </div>
