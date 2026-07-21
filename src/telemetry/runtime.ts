@@ -1,7 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 import { dashboardConfig } from '../config';
-import { events as fixtureEvents } from '../data';
-import type { CognitiveEvent, CognitiveMetric, DashboardSnapshot, DataFreshness, Provenance } from './contracts';
+import { events as fixtureEvents, pipeline as fixturePipeline } from '../data';
+import type {
+  CognitiveEvent,
+  CognitiveMetric,
+  DashboardSnapshot,
+  DataFreshness,
+  PipelineStageTelemetry,
+  Provenance,
+} from './contracts';
+
+type GatewayPipelineStage = {
+  id: string;
+  label?: string;
+  health?: PipelineStageTelemetry['health'];
+  latencyMs?: number;
+  throughputPerMinute?: number | null;
+  confidence?: number;
+  queueDepth?: number;
+  detail?: string;
+  provenance?: { source?: string; schemaVersion?: string; simulated?: boolean };
+};
 
 type GatewaySnapshot = {
   snapshotId: string;
@@ -9,6 +28,7 @@ type GatewaySnapshot = {
   freshness?: { state?: DataFreshness; observedAt?: string };
   provenance?: { source?: string; simulated?: boolean };
   metrics?: Record<string, number>;
+  pipeline?: GatewayPipelineStage[];
 };
 
 type GatewayEvent = Omit<CognitiveEvent, 'provenance'> & {
@@ -50,6 +70,21 @@ function normalizeMetrics(values: Record<string, number>, observedAt: string, so
   }));
 }
 
+function normalizePipeline(stages: GatewayPipelineStage[] | undefined, observedAt: string, source: string): PipelineStageTelemetry[] {
+  if (!stages?.length) return [];
+  return stages.map((stage) => ({
+    id: stage.id,
+    label: stage.label ?? stage.id.replace(/(^|-)(\w)/g, (_, prefix: string, letter: string) => `${prefix ? ' ' : ''}${letter.toUpperCase()}`),
+    health: stage.health ?? 'offline',
+    latencyMs: Number.isFinite(stage.latencyMs) ? Math.max(0, stage.latencyMs ?? 0) : 0,
+    throughputPerMinute: Number.isFinite(stage.throughputPerMinute) ? Math.max(0, stage.throughputPerMinute ?? 0) : null,
+    confidence: Number.isFinite(stage.confidence) ? Math.max(0, Math.min(100, stage.confidence ?? 0)) : 0,
+    queueDepth: Number.isFinite(stage.queueDepth) ? Math.max(0, Math.round(stage.queueDepth ?? 0)) : 0,
+    detail: stage.detail ?? 'No runtime detail was supplied for this stage.',
+    provenance: provenance(stage.provenance?.source ?? source, observedAt, (stage.confidence ?? 0) / 100),
+  }));
+}
+
 function normalizeEvent(event: GatewayEvent): CognitiveEvent {
   return {
     id: event.id,
@@ -77,6 +112,17 @@ function simulatedSnapshot(tick = 0): DashboardSnapshot {
     traceId: `capt-${event.id}-7a9`,
     provenance: provenance('simulated-adapter', generatedAt, event.confidence / 100),
   })) satisfies CognitiveEvent[];
+  const pipeline = fixturePipeline.map((stage) => ({
+    id: stage.id,
+    label: stage.label,
+    health: stage.health,
+    latencyMs: stage.latency,
+    throughputPerMinute: stage.throughput,
+    confidence: stage.confidence,
+    queueDepth: stage.queue,
+    detail: stage.detail,
+    provenance: provenance('simulated-adapter', generatedAt, stage.confidence / 100),
+  })) satisfies PipelineStageTelemetry[];
 
   return {
     snapshotId: `simulated-${tick}`,
@@ -91,6 +137,7 @@ function simulatedSnapshot(tick = 0): DashboardSnapshot {
       dependenciesWaiting: 2,
     },
     metrics: normalizeMetrics(values, generatedAt, 'simulated-adapter'),
+    pipeline,
     recentEvents,
   };
 }
@@ -126,6 +173,7 @@ async function gatewaySnapshot(signal?: AbortSignal): Promise<DashboardSnapshot>
       dependenciesWaiting: 0,
     },
     metrics,
+    pipeline: normalizePipeline(snapshot.pipeline, observedAt, source),
     recentEvents: (page.events ?? []).map(normalizeEvent),
   };
 }

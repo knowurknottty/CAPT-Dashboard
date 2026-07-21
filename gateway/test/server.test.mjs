@@ -22,9 +22,22 @@ test('health and snapshot expose bounded simulated state', async () => {
     assert.equal(health.status, 'ok');
 
     const snapshot = await fetch(`${baseUrl}/api/v1/snapshot`).then((response) => response.json());
+    assert.equal(snapshot.schemaVersion, '1.0.0');
     assert.equal(snapshot.provenance.simulated, true);
     assert.equal(snapshot.freshness.state, 'live');
-    assert.ok(snapshot.pipeline.length > 0);
+    assert.equal(snapshot.pipeline.length, 8);
+    assert.deepEqual(Object.keys(snapshot.pipeline[0]).sort(), [
+      'confidence',
+      'detail',
+      'health',
+      'id',
+      'label',
+      'latencyMs',
+      'provenance',
+      'queueDepth',
+      'throughputPerMinute',
+    ]);
+    assert.equal(snapshot.pipeline[0].provenance.schemaVersion, '1.0.0');
   });
 });
 

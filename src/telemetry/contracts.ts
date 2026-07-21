@@ -20,6 +20,18 @@ export interface CognitiveMetric {
   provenance: Provenance;
 }
 
+export interface PipelineStageTelemetry {
+  id: string;
+  label: string;
+  health: CognitiveHealth;
+  latencyMs: number;
+  throughputPerMinute: number | null;
+  confidence: number;
+  queueDepth: number;
+  detail: string;
+  provenance: Provenance;
+}
+
 export interface CognitiveEvent {
   id: string;
   type: 'memory' | 'reasoning' | 'agent' | 'governance' | 'execution' | 'learning';
@@ -45,6 +57,7 @@ export interface DashboardSnapshot {
     dependenciesWaiting: number;
   };
   metrics: CognitiveMetric[];
+  pipeline: PipelineStageTelemetry[];
   recentEvents: CognitiveEvent[];
 }
 

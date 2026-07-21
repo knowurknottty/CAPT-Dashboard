@@ -17,7 +17,7 @@ import {
   TimerReset,
   Waypoints,
 } from 'lucide-react';
-import { agents, hypotheses, memoryClusters, pipeline, type Health } from './data';
+import { agents, hypotheses, memoryClusters, type Health } from './data';
 import { useRuntimeTelemetry } from './telemetry/runtime';
 
 function healthLabel(health: Health) {
@@ -35,7 +35,7 @@ function Sparkline({ points }: { points: number[] }) {
 
 function App() {
   const telemetry = useRuntimeTelemetry();
-  const [selectedStage, setSelectedStage] = useState(pipeline[3]);
+  const [selectedStageId, setSelectedStageId] = useState('reasoning');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [timelineMinute, setTimelineMinute] = useState(59);
   const [intervention, setIntervention] = useState<string | null>(null);
@@ -49,6 +49,9 @@ function App() {
   const selectedEvent = timelineEvents.find((event) => event.id === selectedEventId) ?? timelineEvents.at(-1) ?? null;
   const filteredEvents = timelineEvents.filter((event) => `${event.title} ${event.detail} ${event.type}`.toLowerCase().includes(query.toLowerCase()));
   const mission = telemetry.snapshot.mission;
+  const pipeline = telemetry.snapshot.pipeline;
+  const selectedStage = pipeline.find((stage) => stage.id === selectedStageId) ?? pipeline[0] ?? null;
+  const attentionCount = pipeline.filter((stage) => stage.health === 'warning' || stage.health === 'critical').length;
   const isLive = telemetry.freshness === 'live' && !telemetry.paused;
 
   function toggleLive() {
@@ -106,33 +109,35 @@ function App() {
         <section className="panel pipeline-panel">
           <div className="panel-heading">
             <div><span className="eyeline">Cognitive pipeline</span><h2>State flow</h2></div>
-            <span className="muted">Fixture-backed · gateway pipeline schema pending</span>
+            <span className="muted">{pipeline.length} observed stages · {attentionCount} need attention</span>
           </div>
-          <div className="pipeline-flow">
-            {pipeline.map((stage, index) => (
-              <div className="stage-wrap" key={stage.id}>
-                <button className={`stage-node ${stage.health} ${selectedStage.id === stage.id ? 'selected' : ''}`} onClick={() => setSelectedStage(stage)}>
-                  <span className="stage-index">0{index + 1}</span>
-                  <strong>{stage.label}</strong>
-                  <span>{stage.latency} ms</span>
-                  <i aria-label={healthLabel(stage.health)} />
-                </button>
-                {index < pipeline.length - 1 && <ChevronRight className="stage-arrow" size={16} />}
-              </div>
-            ))}
-          </div>
-          <div className="stage-detail">
-            <div>
-              <span className={`status-chip ${selectedStage.health}`}>{healthLabel(selectedStage.health)}</span>
-              <h3>{selectedStage.label}</h3>
-              <p>{selectedStage.detail}</p>
+          {pipeline.length > 0 ? <>
+            <div className="pipeline-flow">
+              {pipeline.map((stage, index) => (
+                <div className="stage-wrap" key={stage.id}>
+                  <button className={`stage-node ${stage.health} ${selectedStage?.id === stage.id ? 'selected' : ''}`} onClick={() => setSelectedStageId(stage.id)} title={`${stage.provenance.source} · ${stage.provenance.observedAt}`}>
+                    <span className="stage-index">{String(index + 1).padStart(2, '0')}</span>
+                    <strong>{stage.label}</strong>
+                    <span>{stage.latencyMs} ms</span>
+                    <i aria-label={healthLabel(stage.health)} />
+                  </button>
+                  {index < pipeline.length - 1 && <ChevronRight className="stage-arrow" size={16} />}
+                </div>
+              ))}
             </div>
-            <dl>
-              <div><dt>Throughput</dt><dd>{selectedStage.throughput}/min</dd></div>
-              <div><dt>Confidence</dt><dd>{selectedStage.confidence}%</dd></div>
-              <div><dt>Queue</dt><dd>{selectedStage.queue}</dd></div>
-            </dl>
-          </div>
+            {selectedStage && <div className="stage-detail">
+              <div>
+                <span className={`status-chip ${selectedStage.health}`}>{healthLabel(selectedStage.health)}</span>
+                <h3>{selectedStage.label}</h3>
+                <p>{selectedStage.detail}</p>
+              </div>
+              <dl>
+                <div><dt>Throughput</dt><dd>{selectedStage.throughputPerMinute === null ? 'unknown' : `${selectedStage.throughputPerMinute}/min`}</dd></div>
+                <div><dt>Confidence</dt><dd>{selectedStage.confidence}%</dd></div>
+                <div><dt>Queue</dt><dd>{selectedStage.queueDepth}</dd></div>
+              </dl>
+            </div>}
+          </> : <div className="stage-detail"><p>No pipeline stages were supplied by the active adapter. Last-known mission and event data remain available.</p></div>}
         </section>
 
         <section className="panel reasoning-panel">
