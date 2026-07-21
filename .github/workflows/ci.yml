@@ -19,4 +19,7 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run check
       - run: npm run build
+      - run: npm --prefix gateway test
+      - run: docker compose config
       - run: docker build -t capt-dashboard-ci .
+      - run: docker build -t capt-observatory-gateway-ci ./gateway
