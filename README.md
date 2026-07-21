@@ -6,16 +6,18 @@ A cognitive observability command center for the CAPT architecture. It is design
 
 Yes: this project is self-hosted.
 
-The repository builds to static assets and includes a hardened Nginx container plus Docker Compose deployment. By default Compose binds only to `127.0.0.1:8080`; expose it through your own TLS and identity-aware reverse proxy rather than directly to the public internet.
+The repository includes a hardened Nginx dashboard container and a private CAPT Observatory Gateway service. Docker Compose binds only the dashboard to `127.0.0.1:8080`; the gateway is reachable only on the internal Compose network. Put your own TLS and identity-aware reverse proxy in front of the dashboard rather than exposing it directly to the public internet.
 
 ```bash
 docker compose up --build -d
 curl http://127.0.0.1:8080/healthz
+curl http://127.0.0.1:8080/readyz
+curl http://127.0.0.1:8080/api/v1/snapshot
 ```
 
 Open `http://127.0.0.1:8080` locally.
 
-The frontend is self-hosted today. The CAPT Observatory Gateway that will supply real telemetry and governed interventions is the next runtime component; current UI telemetry remains explicitly simulated.
+The gateway currently emits clearly marked simulated fixtures. Real CAPT integration belongs behind the gateway adapters; the browser must never receive raw NATS/Redis credentials, unrestricted command channels, or database access.
 
 ## Current vertical slice
 
@@ -28,6 +30,22 @@ The frontend is self-hosted today. The CAPT Observatory Gateway that will supply
 - Provenance and freshness panel
 - Safe intervention previews that never execute destructive actions
 - Responsive mobile layout and reduced-motion support
+
+## Observatory Gateway
+
+The dependency-light Node 22 gateway provides:
+
+- `GET /healthz` and `GET /readyz`
+- `GET /api/v1/snapshot`
+- bounded `GET /api/v1/events`
+- bounded replay plus heartbeat SSE at `GET /api/v1/events/stream`
+- trace evidence at `GET /api/v1/traces/:traceId`
+- intervention preview and single-use confirmation endpoints
+- bounded, hash-chained audit receipts
+- strict request-size, event-count, and preview-expiry limits
+- execution disabled by default
+
+The API description is in [`gateway/openapi.yaml`](gateway/openapi.yaml).
 
 ## Three-pass refinement
 
@@ -45,7 +63,7 @@ The frontend is self-hosted today. The CAPT Observatory Gateway that will supply
 
 ### 3. Production boundary
 
-- Added a reproducible Docker build, health check, hardened Nginx configuration, CSP, immutable asset caching, and read-only Compose deployment.
+- Added reproducible containers, health checks, hardened Nginx, CSP, immutable asset caching, and read-only Compose deployment.
 - Defined preview → confirmation → revalidation → execution → audit semantics for interventions.
 - Documented event-gap, reconnect, clock-skew, and unknown-outcome behavior.
 
@@ -53,10 +71,19 @@ See [`docs/RUNTIME_INTEGRATION.md`](docs/RUNTIME_INTEGRATION.md) for the full ga
 
 ## Local development
 
+Frontend:
+
 ```bash
 cp .env.example .env
 npm install
 npm run dev
+```
+
+Gateway:
+
+```bash
+npm --prefix gateway test
+node gateway/src/server.mjs
 ```
 
 Production validation:
@@ -64,14 +91,21 @@ Production validation:
 ```bash
 npm run check
 npm run build
+npm --prefix gateway test
+docker compose config
+docker compose build
 ```
 
 ## Runtime configuration
 
 - `VITE_CAPT_TELEMETRY_MODE`: `simulated`, `polling`, or `stream`
 - `VITE_CAPT_API_BASE_URL`: same-origin gateway base, default `/api`
-- `VITE_CAPT_STREAM_URL`: optional WebSocket/SSE endpoint
+- `VITE_CAPT_STREAM_URL`: optional SSE endpoint
 - `VITE_CAPT_POLL_INTERVAL_MS`: bounded polling cadence
 - `VITE_CAPT_STALE_AFTER_MS`: last-event age before stale state
+- `ALLOW_EXECUTION`: gateway execution switch; defaults to `false`
+- `MAX_BODY_BYTES`: maximum request body; defaults to `16384`
+- `MAX_EVENT_LIMIT`: maximum event page/replay; defaults to `200`
+- `PREVIEW_TTL_MS`: preview confirmation window; defaults to `60000`
 
 Development occurs through pull requests; direct writes to `main` are avoided.
