@@ -1,6 +1,7 @@
 export type DataFreshness = 'live' | 'delayed' | 'stale' | 'partial' | 'offline' | 'error';
 
 export type CognitiveHealth = 'healthy' | 'warning' | 'critical' | 'offline';
+export type AgentOperatingState = 'active' | 'watching' | 'blocked' | 'idle' | 'offline';
 
 export interface Provenance {
   source: string;
@@ -32,6 +33,18 @@ export interface PipelineStageTelemetry {
   provenance: Provenance;
 }
 
+export interface AgentTelemetry {
+  id: string;
+  name: string;
+  role: string;
+  state: AgentOperatingState;
+  load: number;
+  trust: number;
+  activeTask: string | null;
+  lastHeartbeatAt: string;
+  provenance: Provenance;
+}
+
 export interface CognitiveEvent {
   id: string;
   type: 'memory' | 'reasoning' | 'agent' | 'governance' | 'execution' | 'learning';
@@ -58,6 +71,7 @@ export interface DashboardSnapshot {
   };
   metrics: CognitiveMetric[];
   pipeline: PipelineStageTelemetry[];
+  agents: AgentTelemetry[];
   recentEvents: CognitiveEvent[];
 }
 

@@ -26,18 +26,20 @@ test('health and snapshot expose bounded simulated state', async () => {
     assert.equal(snapshot.provenance.simulated, true);
     assert.equal(snapshot.freshness.state, 'live');
     assert.equal(snapshot.pipeline.length, 8);
-    assert.deepEqual(Object.keys(snapshot.pipeline[0]).sort(), [
-      'confidence',
-      'detail',
-      'health',
+    assert.equal(snapshot.agents.length, 6);
+    assert.deepEqual(Object.keys(snapshot.agents[0]).sort(), [
+      'activeTask',
       'id',
-      'label',
-      'latencyMs',
+      'lastHeartbeatAt',
+      'load',
+      'name',
       'provenance',
-      'queueDepth',
-      'throughputPerMinute',
+      'role',
+      'state',
+      'trust',
     ]);
-    assert.equal(snapshot.pipeline[0].provenance.schemaVersion, '1.0.0');
+    assert.equal(snapshot.agents[0].provenance.schemaVersion, '1.0.0');
+    assert.ok(Date.parse(snapshot.agents[0].lastHeartbeatAt));
   });
 });
 

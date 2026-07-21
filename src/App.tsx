@@ -17,7 +17,7 @@ import {
   TimerReset,
   Waypoints,
 } from 'lucide-react';
-import { agents, hypotheses, memoryClusters, type Health } from './data';
+import { hypotheses, memoryClusters, type Health } from './data';
 import { useRuntimeTelemetry } from './telemetry/runtime';
 
 function healthLabel(health: Health) {
@@ -50,6 +50,7 @@ function App() {
   const filteredEvents = timelineEvents.filter((event) => `${event.title} ${event.detail} ${event.type}`.toLowerCase().includes(query.toLowerCase()));
   const mission = telemetry.snapshot.mission;
   const pipeline = telemetry.snapshot.pipeline;
+  const agents = telemetry.snapshot.agents;
   const selectedStage = pipeline.find((stage) => stage.id === selectedStageId) ?? pipeline[0] ?? null;
   const attentionCount = pipeline.filter((stage) => stage.health === 'warning' || stage.health === 'critical').length;
   const isLive = telemetry.freshness === 'live' && !telemetry.paused;
@@ -178,19 +179,19 @@ function App() {
         <section className="panel agents-panel">
           <div className="panel-heading">
             <div><span className="eyeline">Agent ecology</span><h2>Constellation</h2></div>
-            <Network size={20} />
+            <span className="muted">{agents.length} observed agents</span>
           </div>
-          <div className="agent-list">
+          {agents.length > 0 ? <div className="agent-list">
             {agents.map((agent) => (
-              <article key={agent.name} className={`agent-row ${agent.state}`}>
+              <article key={agent.id} className={`agent-row ${agent.state}`} title={`${agent.activeTask ?? 'No active task'} · heartbeat ${new Date(agent.lastHeartbeatAt).toLocaleTimeString()} · ${agent.provenance.source}`}>
                 <span className="agent-avatar">{agent.name.slice(0, 2).toUpperCase()}</span>
                 <div><strong>{agent.name}</strong><span>{agent.role}</span></div>
-                <div className="load-meter"><span style={{ width: `${agent.load}%` }} /></div>
+                <div className="load-meter" aria-label={`${agent.load}% load`}><span style={{ width: `${agent.load}%` }} /></div>
                 <strong>{agent.trust}</strong>
                 <i>{agent.state}</i>
               </article>
             ))}
-          </div>
+          </div> : <div className="stage-detail"><p>No agent ecology telemetry was supplied by the active adapter.</p></div>}
         </section>
 
         <section className="panel timeline-panel">
