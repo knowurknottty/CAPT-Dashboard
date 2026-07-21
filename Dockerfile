@@ -3,6 +3,10 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
+ARG VITE_CAPT_TELEMETRY_MODE=polling
+ARG VITE_CAPT_API_BASE_URL=/api
+ENV VITE_CAPT_TELEMETRY_MODE=$VITE_CAPT_TELEMETRY_MODE \
+    VITE_CAPT_API_BASE_URL=$VITE_CAPT_API_BASE_URL
 RUN npm run check && npm run build
 
 FROM nginx:1.27-alpine
