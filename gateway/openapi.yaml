@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CAPT Observatory Gateway
-  version: 0.2.0
+  version: 0.3.0
   description: Bounded, evidence-oriented API between CAPT runtime sources and the self-hosted dashboard.
 servers:
   - url: /api/v1
@@ -16,7 +16,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [schemaVersion, snapshotId, generatedAt, freshness, provenance, metrics, pipeline]
+                required: [schemaVersion, snapshotId, generatedAt, freshness, provenance, metrics, pipeline, agents]
                 properties:
                   schemaVersion: { type: string }
                   snapshotId: { type: string }
@@ -44,6 +44,11 @@ paths:
                     maxItems: 64
                     items:
                       $ref: '#/components/schemas/PipelineStageTelemetry'
+                  agents:
+                    type: array
+                    maxItems: 256
+                    items:
+                      $ref: '#/components/schemas/AgentTelemetry'
   /events:
     get:
       summary: Page through normalized append-only observatory events
@@ -127,9 +132,26 @@ components:
         queueDepth: { type: integer, minimum: 0 }
         detail: { type: string, maxLength: 500 }
         provenance:
-          type: object
-          required: [source, simulated, schemaVersion]
-          properties:
-            source: { type: string }
-            simulated: { type: boolean }
-            schemaVersion: { type: string }
+          $ref: '#/components/schemas/SourceProvenance'
+    AgentTelemetry:
+      type: object
+      additionalProperties: false
+      required: [id, name, role, state, load, trust, activeTask, lastHeartbeatAt, provenance]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 100 }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        role: { type: string, minLength: 1, maxLength: 160 }
+        state: { type: string, enum: [active, watching, blocked, idle, offline] }
+        load: { type: number, minimum: 0, maximum: 100 }
+        trust: { type: number, minimum: 0, maximum: 100 }
+        activeTask: { type: [string, 'null'], maxLength: 300 }
+        lastHeartbeatAt: { type: string, format: date-time }
+        provenance:
+          $ref: '#/components/schemas/SourceProvenance'
+    SourceProvenance:
+      type: object
+      required: [source, simulated, schemaVersion]
+      properties:
+        source: { type: string }
+        simulated: { type: boolean }
+        schemaVersion: { type: string }
